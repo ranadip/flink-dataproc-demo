@@ -1,0 +1,8 @@
+{
+    "python.pythonPath": "/Users/ranadip/venv/gcloudpy3/bin/python",
+    "python.venvPath": "/Users/ranadip/venv",
+    "python.venvFolders": [
+        "venv"
+    ],
+    "python.terminal.activateEnvInCurrentTerminal": true
+}
