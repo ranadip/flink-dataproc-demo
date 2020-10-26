@@ -5,11 +5,12 @@ import json
 import websockets
 from kafka import KafkaProducer
 
-kafka_broker_list='23.236.61.27:9092'
+# kafka_broker_list='23.236.61.27:9092'
+kafka_broker_list='localhost:9092'
 kafka_topic='crypto-trade'
 producer = KafkaProducer(bootstrap_servers=kafka_broker_list)
-producer.send('sample', b'Hello, World!')
-producer.send('sample', key=b'message-two', value=b'This is Kafka-Python')
+# producer.send('sample', b'Hello, World!')
+# producer.send('sample', key=b'message-two', value=b'This is Kafka-Python')
 
 async def cryptocompare():
     # this is where you paste your api key
@@ -26,7 +27,7 @@ async def cryptocompare():
             except websockets.ConnectionClosed:
                 break
             try:
-                producer.send(kafka_topic, data)
+                producer.send(kafka_topic, str.encode(data))
                 
                 data = json.loads(data)
                 print(json.dumps(data, indent=4))
