@@ -16,6 +16,11 @@
 
 # Based on https://min-api.cryptocompare.com/documentation/websockets?key=Channels&cat=Trade&api_key=63d4d30c6c92db96f7a89950e16ceb69cefebe0a186397b38998e3e317b783f6
 
+# Dependencies:
+# kafka-python
+# websockets
+
+
 import asyncio
 import json
 import websockets

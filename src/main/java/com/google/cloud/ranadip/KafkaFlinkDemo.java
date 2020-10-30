@@ -153,7 +153,8 @@ public class KafkaFlinkDemo {
         final String kafkaBootstrapServers = params.get("kafka_bootstrap_servers", "localhost:9092");
         final String kafkaGroupId = params.get("kafka_group_id", "test");
         final String kafkaTopic = params.get("kafka_topic", "crypto-trade");
-        final  String flinkHost = params.get("flink_host", "127.0.0.1");
+        final  String redisHost = params.get("redis_host", "127.0.0.1");
+        final  Integer redisPort = Integer.parseInt(params.get("redis_port", "6379"));
 //        Ensure this is documented: params.get("key_1", "BTC-USD-SELL")
         //        Ensure this is documented: params.get("key_1_vol_label", "Q")
         //        Ensure this is documented: params.get("key_1_tot_label", "TOTAL")
@@ -165,7 +166,8 @@ public class KafkaFlinkDemo {
 
         // set up the execution environment
         final StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
-        final FlinkJedisPoolConfig conf = new FlinkJedisPoolConfig.Builder().setHost(flinkHost).build();
+        final FlinkJedisPoolConfig conf = new FlinkJedisPoolConfig.Builder()
+                .setHost(redisHost).setPort(redisPort).build();
 
 
         // make parameters available in the web interface
