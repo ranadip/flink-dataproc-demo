@@ -28,8 +28,8 @@
 
   <properties>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-    <maven.compiler.source>1.7</maven.compiler.source>
-    <maven.compiler.target>1.7</maven.compiler.target>
+    <maven.compiler.source>1.8</maven.compiler.source>
+    <maven.compiler.target>1.8</maven.compiler.target>
     <flink.version>1.11.2</flink.version>
     <scala.binary.version>2.12</scala.binary.version>
   </properties>
@@ -76,6 +76,12 @@
       <groupId>org.apache.bahir</groupId>
       <artifactId>flink-connector-redis_2.11</artifactId>
       <version>1.0</version>
+      <exclusions>
+        <exclusion>
+          <groupId>org.apache.flink</groupId>
+          <artifactId>flink-streaming-java_2.11</artifactId>
+        </exclusion>
+      </exclusions>
     </dependency>
   </dependencies>
 
