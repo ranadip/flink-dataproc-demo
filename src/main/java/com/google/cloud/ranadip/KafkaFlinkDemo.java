@@ -66,32 +66,88 @@ import org.apache.flink.streaming.connectors.redis.common.config.FlinkJedisPoolC
 import org.apache.flink.streaming.connectors.redis.common.mapper.RedisCommand;
 import org.apache.flink.streaming.connectors.redis.common.mapper.RedisCommandDescription;
 import org.apache.flink.streaming.connectors.redis.common.mapper.RedisMapper;
-import redis.clients.jedis.Tuple;
 
-import java.util.Map;
 import java.util.Properties;
 
 /*
-               Required output: Last 5 mins moving window volume and total traded amount for BTC-USD SELL events
+               Required output: Last 5 mins moving window max price and avg traded volume for BTC-USD SELL events
                Window size: 5 mins
                Sliding every 5 secs
                 Filter condition:
                 1. FSYM = BTC and TSYM = USD and F != 9
                 2. FSYM = USD and TSYM = BTC and F == 9
                 Output:
-                Total volume: Add all Q values for qualifying events
-                Total sum: Add all TOTAL fields for qualifying events
+                Avg volume: Avg of all TOTAL values for qualifying events
+                Max price: Max of P fields for qualifying events
 */
 public class KafkaFlinkDemo {
 
     /**
-     * TotalVolume class implements methods required for the aggregate functions to
+     * MaxPricePerWindow class implements methods required for the aggregate functions to
      * calculate the total traded volumes in the provided window
      */
-    private static class TotalVolume implements AggregateFunction<ObjectNode, Tuple2<Long, Long>, Tuple2<String, Long>> {
+    private static class MaxPricePerWindow implements AggregateFunction<ObjectNode, Double, Tuple2<String, Double>> {
 
         final ExecutionConfig conf = StreamExecutionEnvironment.getExecutionEnvironment().getConfig();
-        final Map<String, String> globalConfigMap = conf.getGlobalJobParameters().toMap();
+
+        @Override
+        public Double createAccumulator() {
+            return 0.00;
+        }
+
+        @Override
+        public Double add(ObjectNode jsonNode, Double accumulator) {
+            if (!jsonNode.get("TYPE").asText().equals("0")) return accumulator; // Non trade message, ignore
+//            Filter condition:
+//            1. FSYM = BTC and TSYM = USD and F == 2 (BUY)
+//            2. FSYM = USD and TSYM = BTC and F == 10 (BUY, with REVERSED symbols)
+            if ( (jsonNode.get("FSYM").asText().equals("BTC")
+                    && jsonNode.get("TSYM").asText().equals("USD") && jsonNode.get("F").asText().equals("2") )
+                    || (jsonNode.get("TSYM").asText().equals("BTC")
+                    && jsonNode.get("FSYM").asText().equals("USD") && jsonNode.get("F").asText().equals("10")) ) {
+                Double price = 0.0;
+                if (jsonNode.get("P") != null)
+                    price = jsonNode.get("P").asDouble();
+                return accumulator > price ? accumulator : price;
+            }
+            else return accumulator;
+        }
+
+        @Override
+        public Tuple2<String, Double> getResult(Double acc) {
+            return new Tuple2<>("BTC-USD-SELL-P", acc);
+        }
+
+        @Override
+        public Double merge(Double acc1, Double acc2) {
+            return acc1 > acc2 ? acc1 : acc2;
+        }
+    }
+
+    private static class RedisPriceMapper implements RedisMapper<Tuple2<String, Double>> {
+
+        @Override
+        public RedisCommandDescription getCommandDescription() {
+            return new RedisCommandDescription(RedisCommand.SET);
+        }
+
+        @Override
+        public String getKeyFromData(Tuple2<String, Double> data) {
+            return data.f0;
+        }
+
+        @Override
+        public String getValueFromData(Tuple2<String, Double> data) {
+            return data.f1.toString();
+        }
+    }
+
+
+    /**
+     * AvgVolumePerTrade class implements methods required for the aggregate functions to
+     * calculate the total traded volumes in the provided window
+     */
+    private static class AvgVolumePerTrade implements AggregateFunction<ObjectNode, Tuple2<Long, Long>, Tuple2<String, Long>> {
 
         @Override
         public Tuple2<Long, Long> createAccumulator() {
@@ -100,20 +156,43 @@ public class KafkaFlinkDemo {
 
         @Override
         public Tuple2<Long, Long> add(ObjectNode jsonNode, Tuple2<Long, Long> accumulator) {
-            String key1Label = globalConfigMap.getOrDefault("key_1_tot_label", "TOTAL");
-            Long quantity = 0L;
-            if(jsonNode.get(key1Label) != null)
-                quantity = jsonNode.get(key1Label).asLong();
-            return new Tuple2<>(++accumulator.f0, accumulator.f1 + quantity);
+            /*{
+                "TYPE" : "0",
+                    "M" : "Coinbase",
+                    "FSYM" : "BTC",
+                    "TSYM" : "USD",
+                    "F" : "2",
+                    "ID" : "107381694",
+                    "TS" : 1604182041,
+                    "Q" : 0.00691275,
+                    "P" : 13841.32,
+                    "TOTAL" : 95.68158483,
+                    "RTS" : 1604182044,
+                    "TSNS" : 487000000,
+                    "RTSNS" : 199000000
+            }*/
+            if (!jsonNode.get("TYPE").asText().equals("0")) return accumulator; // Non trade message, ignore
+//            Filter condition:
+//            1. FSYM = BTC and TSYM = USD and F == 2 (BUY)
+//            2. FSYM = USD and TSYM = BTC and F == 10 (BUY, with REVERSED symbols)
+            if ( (jsonNode.get("FSYM").asText().equals("BTC")
+                    && jsonNode.get("TSYM").asText().equals("USD") && jsonNode.get("F").asText().equals("2") )
+                || (jsonNode.get("TSYM").asText().equals("BTC") &&
+                    jsonNode.get("FSYM").asText().equals("USD") && jsonNode.get("F").asText().equals("10")) ) {
+                Long quantity = 0L;
+                if (jsonNode.get("TOTAL") != null)
+                    quantity = jsonNode.get("TOTAL").asLong();
+                return new Tuple2<>(++accumulator.f0, accumulator.f1 + quantity);
+            }
+            else return accumulator;
         }
 
         @Override
         public Tuple2<String, Long> getResult(Tuple2<Long, Long> acc) {
-            String keyStr1 = globalConfigMap.getOrDefault("key_1", "BTC-USD-SELL");
             Long averageResult = 0L;
             if (acc.f0 > 0)
                 averageResult = acc.f1 / acc.f0;
-            return new Tuple2<>(keyStr1, averageResult);
+            return new Tuple2<>("BTC-USD-SELL", averageResult);
         }
 
         @Override
@@ -122,7 +201,7 @@ public class KafkaFlinkDemo {
         }
     }
 
-    private static class RedisExampleMapper implements RedisMapper<Tuple2<String, Long>> {
+    private static class RedisVolMapper implements RedisMapper<Tuple2<String, Long>> {
 
         @Override
         public RedisCommandDescription getCommandDescription() {
@@ -166,9 +245,6 @@ public class KafkaFlinkDemo {
 
         // set up the execution environment
         final StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
-        final FlinkJedisPoolConfig conf = new FlinkJedisPoolConfig.Builder()
-                .setHost(redisHost).setPort(redisPort).build();
-
 
         // make parameters available in the web interface
         env.getConfig().setGlobalJobParameters(params);
@@ -183,9 +259,20 @@ public class KafkaFlinkDemo {
         AllWindowedStream<ObjectNode, TimeWindow> commonStream = incomingStream.rebalance()
                 .windowAll(SlidingProcessingTimeWindows.of(Time.seconds(windowSize), Time.seconds(slideSize)));
 
-        SingleOutputStreamOperator<Tuple2<String, Long>> aggVolStream = commonStream.aggregate(new TotalVolume());
+        SingleOutputStreamOperator<Tuple2<String, Long>> aggVolStream = commonStream.aggregate(new AvgVolumePerTrade());
+        // Write into stdout sink
         aggVolStream.print();
-        aggVolStream.addSink(new RedisSink<>(conf, new RedisExampleMapper()));
+
+        // Save Avg Vol into a Redis Sink
+        final FlinkJedisPoolConfig conf = new FlinkJedisPoolConfig.Builder()
+                .setHost(redisHost).setPort(redisPort).build();
+        aggVolStream.addSink(new RedisSink<>(conf, new RedisVolMapper())).name("Redis Vol Sink");
+
+        // Save Max price into a Redis Sink
+        SingleOutputStreamOperator<Tuple2<String, Double>> maxPriceStream = commonStream.aggregate(new MaxPricePerWindow());
+        maxPriceStream.addSink(new RedisSink<>(conf, new RedisPriceMapper())).name("Redis Price Sink");
+        // Write into stdout sink
+        maxPriceStream.print();
 
         // execute program
         env.execute("crypto-trade");
