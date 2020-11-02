@@ -227,7 +227,8 @@ public class KafkaFlinkDemo {
 
         final ParameterTool params = ParameterTool.fromArgs(args);
 
-        final int windowSize = params.getInt("window", 5*60); // 5 mins
+        final int windowSizeLong = params.getInt("window_long", 5*60); // 5 mins
+        final int windowSizeShort = params.getInt("window_short", 10); // 10 seconds
         final int slideSize = params.getInt("slide", 5); // 5 secs
         final String kafkaBootstrapServers = params.get("kafka_bootstrap_servers", "localhost:9092");
         final String kafkaGroupId = params.get("kafka_group_id", "test");
@@ -256,10 +257,10 @@ public class KafkaFlinkDemo {
         // print() will write the contents of the stream to the TaskManager's standard out stream
         // the rebelance call is causing a repartitioning of the data so that all machines
         // see the messages (for example in cases when "num kafka partitions" < "num flink operators"
-        AllWindowedStream<ObjectNode, TimeWindow> commonStream = incomingStream.rebalance()
-                .windowAll(SlidingProcessingTimeWindows.of(Time.seconds(windowSize), Time.seconds(slideSize)));
+        AllWindowedStream<ObjectNode, TimeWindow> commonLongWindowStream = incomingStream.rebalance()
+                .windowAll(SlidingProcessingTimeWindows.of(Time.seconds(windowSizeLong), Time.seconds(slideSize)));
 
-        SingleOutputStreamOperator<Tuple2<String, Long>> aggVolStream = commonStream.aggregate(new AvgVolumePerTrade());
+        SingleOutputStreamOperator<Tuple2<String, Long>> aggVolStream = commonLongWindowStream.aggregate(new AvgVolumePerTrade());
         // Write into stdout sink
         aggVolStream.print();
 
@@ -268,8 +269,11 @@ public class KafkaFlinkDemo {
                 .setHost(redisHost).setPort(redisPort).build();
         aggVolStream.addSink(new RedisSink<>(conf, new RedisVolMapper())).name("Redis Vol Sink");
 
+        // Use a shorter window for more responsive UI updates
+        AllWindowedStream<ObjectNode, TimeWindow> commonShortWindowStream = incomingStream.rebalance()
+                .windowAll(SlidingProcessingTimeWindows.of(Time.seconds(windowSizeShort), Time.seconds(slideSize)));
         // Save Max price into a Redis Sink
-        SingleOutputStreamOperator<Tuple2<String, Double>> maxPriceStream = commonStream.aggregate(new MaxPricePerWindow());
+        SingleOutputStreamOperator<Tuple2<String, Double>> maxPriceStream = commonShortWindowStream.aggregate(new MaxPricePerWindow());
         maxPriceStream.addSink(new RedisSink<>(conf, new RedisPriceMapper())).name("Redis Price Sink");
         // Write into stdout sink
         maxPriceStream.print();
