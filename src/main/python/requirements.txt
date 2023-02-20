@@ -2,4 +2,4 @@
 
 asyncio
 websockets
-kafka
+kafka-python
